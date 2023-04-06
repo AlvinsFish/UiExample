@@ -18,6 +18,9 @@ class BackgroundTask:
         # 通知线程退出
         self.to_exit = False
 
+        # 是否显示show text
+        self.is_show_text = False
+
     def work(self):
         """循环查询"""
         while True:
@@ -30,6 +33,7 @@ class BackgroundTask:
                 if self.to_exit:
                     break
                 self.time_sleep_us(500)
+                self.to_show_text()
             except Exception as e:
                 error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "BackgroundTask: work")
                 print(error_msg)
@@ -46,6 +50,8 @@ class BackgroundTask:
                     # print()
                     # 接收到数据之后，解析数据，响应任务
                     self.process_received_data(rev_data)
+                    # 为了不至于显示太滞后，需要更频繁的检查是否有数据需要显示
+                    self.to_show_text()
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "BackgroundQThread: check_buffer")
             print(error_msg)
@@ -56,6 +62,10 @@ class BackgroundTask:
 
     def time_sleep_us(self, sleep_time=0):
         """等待时间"""
+        pass
+
+    def to_show_text(self):
+        """显示信息"""
         pass
 
 
@@ -85,3 +95,12 @@ class BackgroundQThread(QThread, BackgroundTask):
     def time_sleep_us(self, sleep_time=0):
         """等待时间"""
         self.usleep(sleep_time)
+
+    def to_show_text(self):
+        """显示信息"""
+        try:
+            if self.is_show_text:
+                self.task_signal.emit({'local_show_text': None})
+        except Exception as e:
+            error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "BackgroundQThread: to_show_text")
+            print(error_msg)

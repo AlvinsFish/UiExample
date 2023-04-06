@@ -11,6 +11,8 @@ fun_result_path = 'result_path'
 # 定义各个功能的名称，方便后续读写
 fun_name_device = 'device_management'
 fun_name_device_info = 'device_info'
+fun_name_show_text = 'show_text'
+fun_name_show_text_direct = 'show_text_direct'
 fun_name_task_center = 'task_center'
 fun_name_main_gui = 'main_gui'
 
@@ -28,6 +30,14 @@ fun_property = {
         'fun_name': fun_name_device,
         'path': {fun_lib_path: '\\Device_LIB\\',
                  fun_result_path: '\\Device_Result\\'}
+    },
+    fun_name_show_text: {
+        'fun_name': fun_name_show_text,
+        'path': {fun_result_path: '\\Show_Result\\'}
+    },
+    fun_name_show_text_direct: {
+        'fun_name': fun_name_show_text_direct,
+        'path': {fun_result_path: '\\Show_Result\\'}
     }
 }
 
@@ -59,7 +69,17 @@ task_identify = {
         "task_type": {
             'show_info': 'di1'
         }
-    }
+    },
+    fun_name_show_text: {
+        "fun_id": 15,
+        "task_type": {
+        }
+    },
+    fun_name_show_text_direct:{
+        "fun_id": 16,
+        "task_type": {
+        }
+    },
 }
 
 

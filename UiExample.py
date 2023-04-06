@@ -4,12 +4,15 @@ import sys
 import threading
 import time
 
+from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMainWindow
 
 from py_about import about
 from py_protocol import com_protocol
+from py_show_text.show_text_gui import ShowTextGui, ShowTextDirectGui
 from py_taskcenter import public, task_center
 from py_tools import tools_common, background_task
+from py_tools.tools_text import LocalShowText
 from py_ui import main_gui
 from py_ui.device_info import DeviceInfo
 from py_ui.device_management import DeviceManage
@@ -34,12 +37,10 @@ class MainGUI(QMainWindow):
 
         # 设备管理器
         self.device_manage = DeviceManage(self)
-        self.device_info = DeviceInfo(self)
 
         # 各界面的名称
         self.fun_name = public.fun_name_main_gui
         self.device_manage.fun_name = public.fun_name_device
-        self.device_info.fun_name = public.fun_name_device_info
         self.task_center_fun_name = public.fun_name_task_center
 
         # 当前界面的地址
@@ -67,6 +68,28 @@ class MainGUI(QMainWindow):
         # 进程是否退出标识
         self.task_center_exited = False
 
+        # 显示信息的类
+        self.local_show_text = LocalShowText()
+
+        # 工具栏
+        self.fun_property = {
+            public.fun_name_device_info: {
+                'btn': ['设备显示', DeviceInfo, True],
+                'instance': [list(), 1],
+                'path': None
+            },
+            public.fun_name_show_text: {
+                'btn': ['Text显示', ShowTextGui, True],
+                'instance': [list(), 2],
+                'path': None
+            },
+            public.fun_name_show_text_direct: {
+                'btn': ['Text显示-直显', ShowTextDirectGui, True],
+                'instance': [list(), 2],
+                'path': None
+            }
+        }
+
     def create_main_gui(self):
         """界面初始化"""
         # 界面控件初始化
@@ -78,28 +101,36 @@ class MainGUI(QMainWindow):
         # 初始化目录
         self.root_path, error_msg_path = fun_path_initial()
         if error_msg_path:
-            show_data_to_text(error_msg_path)
+            self.show_data_to_text(error_msg_path)
         self.path_initial()
 
         # 初始化设备管理界面中的控件
         self.device_manage.create_main_gui()
-        self.device_info.create_main_gui()
 
         # 后台任务的一些初始化和启动
         self.background_task.task_signal.connect(self.distribute_task)
         self.background_task.buffer_list.append(self.buffer_read)
+        self.background_task.is_show_text = True
         self.background_task.start()
 
         # 获取主界面的gui_id
         self.gui_id = public.get_gui_id(self.fun_name)
         self.device_manage.gui_id = public.get_gui_id(self.device_manage.fun_name)
-        self.device_info.gui_id = public.get_gui_id(self.device_info.fun_name)
         self.data_transfer.gui_id = self.gui_id
+
+        # 子界面
+        self._create_fun_gui(public.fun_name_device_info,
+                             self.fun_property[public.fun_name_device_info]['btn'][1])
+        self._create_fun_gui(public.fun_name_show_text,
+                             self.fun_property[public.fun_name_show_text]['btn'][1])
+        self._create_fun_gui(public.fun_name_show_text,
+                             self.fun_property[public.fun_name_show_text]['btn'][1])
+        self._create_fun_gui(public.fun_name_show_text_direct,
+                             self.fun_property[public.fun_name_show_text_direct]['btn'][1])
 
         # 主界面跟其他界面是一样的，也需要注册，如果属于主界面的任务，也能够响应执行
         self.data_transfer.add_route(self.gui_id, self)
         self.data_transfer.add_route(self.device_manage.gui_id, self.device_manage)
-        self.data_transfer.add_route(self.device_info.gui_id, self.device_info)
 
         self.start_sub_process()
 
@@ -107,8 +138,70 @@ class MainGUI(QMainWindow):
         th.setDaemon(True)
         th.start()
 
+        self.win_main.device_tabwidget.setCurrentWidget(self.win_main.main_device_tab)
         # 显示界面
         self.show()
+
+    def _create_fun_gui(self, fun_name='', fun_instance=None):
+        """创建界面的公共函数"""
+        if not self._gui_management(fun_name):
+            return
+        if len(self.fun_property[fun_name]['instance'][0]) < \
+                int(self.fun_property[fun_name]['instance'][1]):
+            gui_id = public.get_gui_id(fun_name, self.fun_property[fun_name]['instance'][0])
+
+            # 显示到tab页上
+            new_tab, index = self.add_one_tab(gui_id, self.fun_property[fun_name]['btn'][0])
+
+            instance_test = fun_instance(
+                {
+                    'fun_name': fun_name,
+                    'buffer_write': self.buffer_read,
+                    'gui_id': gui_id,
+                    'task_center_gui_id': self.task_center_gui_id,
+                    'main_gui_id': self.gui_id,
+                    'local_show_text': self.local_show_text,
+                    'main_window': self,
+                    'path': self.fun_property[fun_name]['path'],
+                },
+                new_tab
+            )
+            self.fun_property[fun_name]['instance'][0].append(instance_test)
+            # 创建界面的时候需要在路由中注册
+            self.data_transfer.add_route(gui_id, instance_test)
+            instance_test.create_main_gui()
+        else:
+            # later：这里后续不要警告，而是跳转到最后一个界面
+            self.show_last_gui(fun_name)
+
+    def _gui_management(self, fun_name=''):
+        """检查界面是否已经退出"""
+        instance_temp = self.fun_property[fun_name]['instance'][0].copy()
+        for instance_test in instance_temp:
+            if instance_test.exited:
+                self.fun_property[fun_name]['instance'][0].remove(instance_test)
+                self.data_transfer.delete_route(instance_test.gui_id)
+        return True
+
+    def add_one_tab(self, obj_name='', tab_name=''):
+        """添加一个tab页"""
+        new_tab = QtWidgets.QWidget()
+        new_tab.setAccessibleName(obj_name)
+        self.win_main.device_tabwidget.addTab(new_tab, tab_name)
+        self.win_main.device_tabwidget.setCurrentWidget(new_tab)
+        index = self.win_main.device_tabwidget.currentIndex()
+        return new_tab, index
+
+    def show_last_gui(self, fun_name=""):
+        """显示最新的一个界面"""
+        try:
+            if self.fun_property[fun_name]['instance'][0]:
+                self.win_main.device_tabwidget.setCurrentWidget(self.fun_property[fun_name]['instance'][0][
+                                                                      len(self.fun_property[fun_name]['instance'][0]) -
+                                                                      1].parent)
+        except Exception as e:
+            error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + 'show_last_gui')
+            self.show_data_to_text(error_msg)
 
     def check_process_started(self):
         """检查进程是否启动成功"""
@@ -119,18 +212,22 @@ class MainGUI(QMainWindow):
             if count > 30000:
                 break
         if self.task_center_started:
-            print(self.fun_name + ': task center启动成功！\n')
+            self.show_data_to_text(self.fun_name + ': task center启动成功！')
         else:
-            print(self.fun_name + ': task center启动失败！\n')
+            self.show_data_to_text(self.fun_name + ': task center启动失败！')
 
     def path_initial(self):
         """根据获取的路径初始化本界面的路径"""
         try:
             for path in public.fun_path.values():
                 tools_common.check_dir(self.root_path + path)
+
+            for names, properties in self.fun_property.items():
+                if names in public.fun_property.keys() and 'path' in public.fun_property[names].keys():
+                    properties['path'] = public.fun_property[names]['path']
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "path_initial")
-            show_data_to_text(error_msg)
+            self.show_data_to_text(error_msg)
 
     def start_sub_process(self):
         """启动子进程"""
@@ -161,17 +258,20 @@ class MainGUI(QMainWindow):
             self.task_center_process.start()
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "start_sub_process")
-            show_data_to_text(error_msg)
+            self.show_data_to_text(error_msg)
 
     def distribute_task(self, msg=None):
         """后台任务的接口，首先由此进行分发"""
         # 这里处理的数据来源有两类，一类是本进程的内部类写入buffer的数据，一类是其他进程写入pipe的数据
         # 这里相当于之前的转发线程，分析数据之后转发至其他类中执行，所以又有执行的功能
         try:
-            self.data_transfer.transfer_msg(msg, True)
+            if 'local_show_text' in msg.keys():
+                self.local_show_text.show_msg_outside()
+            else:
+                self.data_transfer.transfer_msg(msg, True)
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "distribute_task")
-            show_data_to_text(error_msg)
+            self.show_data_to_text(error_msg)
 
     def write(self, rev_data=None):
         """处理接收到的数据"""
@@ -198,7 +298,7 @@ class MainGUI(QMainWindow):
                 print()
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "write")
-            show_data_to_text(error_msg)
+            self.show_data_to_text(error_msg)
 
     def response_of_initial(self, rev_data=None):
         """接收其他进程的初始化信息"""
@@ -233,7 +333,6 @@ class MainGUI(QMainWindow):
         try:
             # 各个子界面退出
             self.device_manage.gui_exit()
-            self.device_info.gui_exit()
 
             # 退出程序，发送信号
             self.background_task.to_exit = True
@@ -256,7 +355,13 @@ class MainGUI(QMainWindow):
             # print(self.task_center_exited)
         except Exception as e:
             error_msg = tools_common.get_error_msg(e.args, error_msg_prefix + "closeEvent")
-            show_data_to_text(error_msg)
+            self.show_data_to_text(error_msg)
+
+    def show_data_to_text(self, content=None, additional_msg=''):
+        """显示数据"""
+        if self.fun_property[public.fun_name_device_info]['instance'][0]:
+            gui_id = self.fun_property[public.fun_name_device_info]['instance'][0][0].gui_id
+            self.local_show_text.local_show_everything_to_text(content, additional_msg, gui_id)
 
 
 def fun_path_initial():
@@ -286,12 +391,6 @@ def fun_path_initial():
         error_msg = tools_common.get_error_msg(e.args, "fun_path_initial")
     root_path = path
     return root_path, error_msg
-
-
-def show_data_to_text(content=None, additional_msg=''):
-    """显示数据"""
-    print(content)
-    print(additional_msg)
 
 
 if __name__ == '__main__':

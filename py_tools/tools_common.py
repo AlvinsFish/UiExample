@@ -184,6 +184,11 @@ def get_ms():
     return ms
 
 
+def get_date_time_ms():
+    rec_time_now = time.strftime("%Y-%m-%d_%H.%M.%S.", time.localtime()) + get_ms()
+    return str(rec_time_now)
+
+
 def time_sleep(time_interval=0, to_stop=False):
     """等待时间"""
     if time_interval > 0:

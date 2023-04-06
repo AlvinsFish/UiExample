@@ -1,26 +1,45 @@
 from py_taskcenter import public
 from py_tools import tools_common
+from py_ui import device_info_ui
 
 error_msg_prefix = "error: device_info: "
 
 
 class DeviceInfo:
 
-    def __init__(self, main_window=None):
+    def __init__(self, fun_property=None, parent=None):
         """初始化"""
-        # 此界面的主界面
-        self.main_window = main_window
-        self.win_main = main_window.win_main
+        self.fun_property = fun_property
+        self.parent = parent
 
-        self.fun_name = ''
-        self.gui_id = ''
+        self.gui_id = self.fun_property['gui_id']
+        self.fun_name = self.fun_property['fun_name']
 
+        # 跟主进程通信的buffer
+        self.buffer_write = self.fun_property['buffer_write']
+        # task center的地址
+        self.task_center_gui_id = self.fun_property['task_center_gui_id']
+        self.main_gui_id = self.fun_property['main_gui_id']
+
+        # 显示信息
+        # 用于显示到text，还有就是生成报告相关的配置
+        # 创建结果文件
+        self.local_show_text = self.fun_property['local_show_text']
+
+        # 主界面
+        self.main_window = self.fun_property['main_window']
+        self.win_main = device_info_ui.Ui_Form()
+
+        # 界面是否退出
         self.exited = False
 
     def create_main_gui(self):
         """创建主界面"""
+        self.win_main.setupUi(self.parent)
         self.win_main.query_btn.clicked.connect(self.query_device_info)
         self.win_main.clear_btn.clicked.connect(lambda: self.win_main.show_text.clear())
+
+        self.local_show_text.add_show_text(self.gui_id, self.win_main.show_text)
 
     def write(self, rev_data=None):
         """接收到的数据"""
@@ -48,7 +67,7 @@ class DeviceInfo:
             error_msg = rev_data['data'][public.error_msg_name]
             if rev_data['data']['task_success']:
                 info = rev_data['data'][rev_data['data']['task_type']]
-                print(info)
+                # print(info)
                 if not info:
                     self.show_data_to_text("无设备信息！\n")
                 else:
@@ -93,9 +112,9 @@ class DeviceInfo:
         }
         self.send_request_to_task_center(data, public.fun_name_device)
 
-    def show_data_to_text(self, info=""):
-        """显示数据到show text"""
-        self.win_main.show_text.append(info)
+    def show_data_to_text(self, content=None, additional_msg=''):
+        """显示数据"""
+        self.local_show_text.local_show_everything_to_text(content, additional_msg, self.gui_id)
 
     def send_request_to_task_center(self, data=None, task_fun_name=""):
         """给task center发送服务请求"""
